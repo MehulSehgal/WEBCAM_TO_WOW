@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Classroom Attention Monitor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;600;800&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@1.3.1/dist/tf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@0.8/dist/teachablemachine-image.min.js"></script>
+<style>
+  :root{--ink:#14213d;--mute:#5f6b85;--bg:#eef1f7;--card:#fff;--line:#dbe1ee;--brand:#2446d6;--good:#16875a;--bad:#d03b3b;--mid:#c88a12}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:Figtree,"Segoe UI",system-ui,sans-serif;background:var(--bg);color:var(--ink);line-height:1.45}
+  .wrap{max-width:1100px;margin:0 auto;padding:0 20px}
+  header{background:var(--ink);color:#fff;padding:22px 0 26px}
+  header .wrap{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap}
+  h1{margin:0;font-size:1.55rem;font-weight:800;letter-spacing:-.01em}
+  header p{margin:4px 0 0;color:#b8c3de;font-size:.95rem}
+  .pill{padding:6px 14px;border-radius:99px;font-size:.85rem;font-weight:600;background:#2d3b61;color:#cfd8ef}
+  .pill.live{background:#1c6b4a;color:#d8ffe9}.pill.load{background:#7a5a10;color:#fff0c9}.pill.err{background:#8a2a2a;color:#ffe0e0}
+  .setup{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;margin:-18px 0 20px;box-shadow:0 6px 20px rgba(20,33,61,.08)}
+  .field{display:flex;gap:10px;flex-wrap:wrap}
+  .field input{flex:1;min-width:240px;padding:12px 14px;border:1.5px solid var(--line);border-radius:8px;font:inherit}
+  .field input:focus{outline:3px solid #b9c6fa;border-color:var(--brand)}
+  button{font:inherit;font-weight:600;padding:12px 24px;border:0;border-radius:8px;background:var(--brand);color:#fff;cursor:pointer}
+  button:hover{filter:brightness(1.1)} button:focus-visible{outline:3px solid #b9c6fa}
+  button.stop{background:#44506f} button:disabled{opacity:.55;cursor:wait}
+  #err{color:var(--bad);font-size:.9rem;margin:8px 2px 0;min-height:1.2em}
+  .steps{display:flex;gap:18px;flex-wrap:wrap;margin:6px 2px 0;color:var(--mute);font-size:.9rem}
+  .steps b{color:var(--ink)}
+  main{display:grid;grid-template-columns:minmax(300px,460px) 1fr;gap:20px;padding-bottom:36px}
+  @media(max-width:860px){main{grid-template-columns:1fr}}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:16px}
+  .card h2{margin:0 0 10px;font-size:.95rem;font-weight:600;color:var(--mute)}
+  .cam{position:relative;aspect-ratio:4/3;background:#0e1730;border-radius:8px;overflow:hidden;display:grid;place-items:center;color:#8d9bc2;text-align:center}
+  .cam canvas{width:100%;height:100%;display:block}
+  .now{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+  #label{font-size:2rem;font-weight:800;letter-spacing:-.02em;line-height:1.1}
+  #label.good{color:var(--good)}#label.bad{color:var(--bad)}#label.neutral{color:var(--mid)}
+  #conf{color:var(--mute);font-size:.9rem}
+  #alert{display:none;margin-top:12px;background:#fdeaea;border:1px solid #f1b9b9;color:#8f2020;padding:10px 12px;border-radius:8px;font-weight:600}
+  .two{display:grid;grid-template-columns:130px 1fr;gap:16px;align-items:center}
+  .ring{position:relative;width:120px;height:120px}
+  .ring svg{width:100%;height:100%}
+  .ring circle{fill:none;stroke-width:10}.ring .bg{stroke:#e3e8f2}
+  .ring .fg{stroke:var(--brand);stroke-linecap:round;stroke-dasharray:264;stroke-dashoffset:264;transition:stroke-dashoffset .4s}
+  .ring b{position:absolute;inset:0;display:grid;place-items:center;font-size:1.6rem;font-weight:800}
+  #tl{display:flex;gap:2px;height:26px;margin-top:6px}
+  #tl i{flex:1;border-radius:2px;background:#e3e8f2}
+  #tl i.good{background:var(--good)}#tl i.bad{background:var(--bad)}#tl i.neutral{background:var(--mid)}
+  .legend{font-size:.8rem;color:var(--mute);margin-top:6px}
+  .row{display:grid;grid-template-columns:140px 1fr 42px;gap:10px;align-items:center;margin:7px 0;font-size:.9rem}
+  .row.top{font-weight:700}
+  .track{height:10px;background:#e3e8f2;border-radius:5px;overflow:hidden}
+  .fill{height:100%;width:0;background:#9aa8d6;transition:width .1s}.row.top .fill{background:var(--brand)}
+  table{width:100%;border-collapse:collapse;font-size:.9rem}
+  td,th{text-align:left;padding:6px 2px;border-bottom:1px solid var(--line)}th{color:var(--mute);font-weight:600}
+  td:last-child,th:last-child{text-align:right}
+  @media(prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<header><div class="wrap">
+  <div><h1>Classroom Attention Monitor</h1><p>See how engaged a student is during a lecture, live from the webcam.</p></div>
+  <span id="pill" class="pill">Idle</span>
+</div></header>
+
+<div class="wrap">
+  <section class="setup">
+    <div class="field">
+      <input id="url" placeholder="Paste your Teachable Machine link here" aria-label="Model link" autocomplete="off">
+      <button id="btn">Start camera</button>
+    </div>
+    <div id="err"></div>
+    <div class="steps"><span><b>1.</b> Paste your model link</span><span><b>2.</b> Start the camera and allow access</span><span><b>3.</b> Act out each behavior</span></div>
+  </section>
+
+  <main>
+    <div>
+      <div class="card"><h2>Camera</h2>
+        <div class="cam" id="cam"><div>Camera is off.<br>Press “Start camera”.</div></div>
+      </div>
+      <div class="card"><h2>Model confidence</h2><div id="bars"><span class="legend">Class bars appear once the model loads.</span></div></div>
+    </div>
+    <div>
+      <div class="card"><h2>Right now</h2>
+        <div class="now"><div><div id="label" class="neutral">–</div><div id="conf">Waiting to start</div></div></div>
+        <div id="alert"></div>
+      </div>
+      <div class="card"><h2>Attention score</h2>
+        <div class="two">
+          <div class="ring"><svg viewBox="0 0 100 100"><circle class="bg" cx="50" cy="50" r="42"/><circle id="arc" class="fg" cx="50" cy="50" r="42" transform="rotate(-90 50 50)"/></svg><b id="score">–</b></div>
+          <div><div class="legend">Last 60 seconds</div><div id="tl"></div>
+            <div class="legend">Green is attentive, amber is neutral, red needs attention.</div></div>
+        </div>
+      </div>
+      <div class="card"><h2>Time spent per behavior</h2>
+        <table><thead><tr><th>Behavior</th><th>Seconds</th></tr></thead><tbody id="stats"><tr><td colspan="2" class="legend">No data yet.</td></tr></tbody></table>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script>
+  // ================== STEP 1: PASTE YOUR MODEL LINK HERE ==================
+  const MODEL_URL = "PASTE_YOUR_MODEL_LINK_HERE";
+  // ========================================================================
+
+  const MIN_CONFIDENCE = 0.70;  // below this the result shows as "Not sure"
+  const ALERT_AFTER_SEC = 5;    // warn when a red behavior lasts this long
+  // Classes are sorted by keyword, so name yours naturally.
+  const GOOD = ["attentive", "raising", "hand", "notes"];
+  const BAD  = ["phone", "sleep", "head", "empty", "away", "talking", "yawn"];
+
+  const $ = id => document.getElementById(id);
+  let model, webcam, running = false, last = 0, badSince = null, stats = {}, tl = [], tick = 0;
+
+  $("url").value = "";
+  window.addEventListener("pageshow", () => { $("url").value = ""; });
+  $("btn").onclick = () => running ? stop() : start();
+  $("url").onkeydown = e => { if (e.key === "Enter" && !running) start(); };
+
+  const kind = n => { n = n.toLowerCase();
+    return BAD.some(k => n.includes(k)) ? "bad" : GOOD.some(k => n.includes(k)) ? "good" : "neutral"; };
+  const status = (t, c = "") => { $("pill").textContent = t; $("pill").className = "pill " + c; };
+  const cleanUrl = u => { u = u.trim().split(/[?#]/)[0].replace(/(model|metadata)\.json$/, ""); return u.endsWith("/") ? u : u + "/"; };
+
+  async function start() {
+    const url = cleanUrl($("url").value);
+    $("err").textContent = "";
+    if (!/teachablemachine\.withgoogle\.com\/models\//.test(url)) {
+      $("err").textContent = "That doesn't look like a Teachable Machine link. It should start with https://teachablemachine.withgoogle.com/models/"; return;
+    }
+    $("btn").disabled = true; status("Loading model…", "load");
+    try {
+      model = await tmImage.load(url + "model.json", url + "metadata.json");
+    } catch (e) {
+      console.error(e); status("Error", "err"); $("btn").disabled = false;
+      $("err").textContent = "Could not load the model. In Teachable Machine use Export Model, then Upload, and copy the shareable link."; return;
+    }
+    try {
+      webcam = new tmImage.Webcam(480, 360, true);
+      await webcam.setup(); await webcam.play();
+    } catch (e) {
+      console.error(e); status("Error", "err"); $("btn").disabled = false;
+      $("err").textContent = "Camera blocked. Allow camera access in the browser address bar and try again."; return;
+    }
+    $("cam").innerHTML = ""; $("cam").appendChild(webcam.canvas);
+    $("bars").innerHTML = model.getClassLabels().map((c, i) =>
+      `<div class="row" id="r${i}"><span>${c}</span><div class="track"><div class="fill" id="f${i}"></div></div><span id="p${i}">0%</span></div>`).join("");
+    stats = {}; tl = []; last = performance.now(); running = true;
+    $("btn").textContent = "Stop"; $("btn").className = "stop"; $("btn").disabled = false;
+    status("Live", "live"); requestAnimationFrame(loop);
+  }
+
+  function stop() {
+    running = false; if (webcam) webcam.stop();
+    $("cam").innerHTML = "<div>Camera is off.<br>Press “Start camera”.</div>";
+    $("btn").textContent = "Start camera"; $("btn").className = ""; status("Idle");
+  }
+
+  async function loop() {
+    if (!running) return;
+    webcam.update();
+    show(await model.predict(webcam.canvas));
+    requestAnimationFrame(loop);
+  }
+
+  function show(preds) {
+    const now = performance.now(), dt = (now - last) / 1000; last = now;
+    const top = preds.reduce((a, b) => a.probability > b.probability ? a : b);
+    preds.forEach((p, i) => {
+      $("f" + i).style.width = p.probability * 100 + "%";
+      $("p" + i).textContent = Math.round(p.probability * 100) + "%";
+      $("r" + i).classList.toggle("top", p === top);
+    });
+    const sure = top.probability >= MIN_CONFIDENCE;
+    const label = sure ? top.className : "Not sure";
+    const k = sure ? kind(label) : "neutral";
+    $("label").textContent = label; $("label").className = k;
+    $("conf").textContent = sure ? Math.round(top.probability * 100) + "% confident" : "Hold still and face the camera";
+
+    stats[label] = (stats[label] || 0) + dt;
+    if (k === "bad") {
+      if (badSince === null) badSince = now;
+      const s = Math.round((now - badSince) / 1000);
+      $("alert").style.display = s >= ALERT_AFTER_SEC ? "block" : "none";
+      $("alert").textContent = `Needs attention: “${label}” for ${s} seconds`;
+    } else { badSince = null; $("alert").style.display = "none"; }
+
+    tick += dt;
+    if (tick >= 1) { tick = 0; tl.push(k); if (tl.length > 60) tl.shift();
+      $("tl").innerHTML = tl.map(x => `<i class="${x}"></i>`).join(""); }
+
+    let total = 0, good = 0;
+    for (const n in stats) { total += stats[n]; if (kind(n) === "good") good += stats[n]; }
+    const pct = total ? Math.round(good / total * 100) : 0;
+    $("score").textContent = total ? pct + "%" : "–";
+    $("arc").style.strokeDashoffset = 264 - 264 * pct / 100;
+    $("stats").innerHTML = Object.entries(stats).sort((a, b) => b[1] - a[1])
+      .map(([n, s]) => `<tr><td>${n}</td><td>${s.toFixed(1)}</td></tr>`).join("");
+  }
+</script>
+</body>
+</html>
