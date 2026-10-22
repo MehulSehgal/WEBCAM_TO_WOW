@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Smart Desk Scanner</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;600;800&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@1.3.1/dist/tf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@0.8/dist/teachablemachine-image.min.js"></script>
+<style>
+  :root{--ink:#22201c;--mute:#756f64;--bg:#ece8e1;--card:#fbfaf7;--line:#d8d2c6;--brand:#0b7a75;--accent:#e2572b}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:"Bricolage Grotesque","Segoe UI",system-ui,sans-serif;background:var(--bg);color:var(--ink);line-height:1.45}
+  .wrap{max-width:1100px;margin:0 auto;padding:0 20px}
+  header{padding:26px 0 16px}
+  header .wrap{display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap}
+  h1{margin:0;font-size:1.7rem;font-weight:800;letter-spacing:-.02em}
+  header p{margin:4px 0 0;color:var(--mute);font-size:.95rem}
+  .pill{padding:6px 14px;border-radius:99px;font-size:.85rem;font-weight:600;background:#dcd6c9;color:#5b5548}
+  .pill.live{background:var(--brand);color:#fff}.pill.load{background:#e9b949;color:#3a2a00}.pill.err{background:var(--accent);color:#fff}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px}
+  .field{display:flex;gap:10px;flex-wrap:wrap}
+  .field input{flex:1;min-width:240px;padding:12px 14px;border:1.5px solid var(--line);border-radius:8px;font:inherit;background:#fff}
+  .field input:focus{outline:3px solid #a8dcd8;border-color:var(--brand)}
+  button{font:inherit;font-weight:600;border:0;border-radius:8px;cursor:pointer;padding:12px 22px;background:var(--brand);color:#fff}
+  button:hover{filter:brightness(1.1)}button:focus-visible{outline:3px solid #a8dcd8}
+  button.stop{background:#4a463e}button.ghost{background:#e5dfd2;color:var(--ink);padding:9px 14px;font-size:.9rem}
+  button:disabled{opacity:.5;cursor:wait}
+  #err{color:#b3391a;font-size:.9rem;margin:8px 2px 0;min-height:1.2em}
+  .steps{color:var(--mute);font-size:.9rem;margin:4px 2px 0}.steps b{color:var(--ink)}
+  main{display:grid;grid-template-columns:minmax(300px,460px) 1fr;gap:20px;margin:20px 0 40px}
+  @media(max-width:860px){main{grid-template-columns:1fr}}
+  h2{margin:0 0 10px;font-size:.95rem;font-weight:600;color:var(--mute)}
+  .cam{position:relative;aspect-ratio:4/3;background:#1d1b17;border-radius:8px;overflow:hidden;display:grid;place-items:center;color:#a39c8d;text-align:center}
+  .cam canvas{width:100%;height:100%;display:block}
+  .frame{position:absolute;inset:14px;pointer-events:none;--c:rgba(255,255,255,.85)}
+  .frame i{position:absolute;width:28px;height:28px;border:3px solid var(--c)}
+  .frame i:nth-child(1){top:0;left:0;border-right:0;border-bottom:0}.frame i:nth-child(2){top:0;right:0;border-left:0;border-bottom:0}
+  .frame i:nth-child(3){bottom:0;left:0;border-right:0;border-top:0}.frame i:nth-child(4){bottom:0;right:0;border-left:0;border-top:0}
+  .frame.ok{--c:#4ee0c8}
+  #item{font-size:2rem;font-weight:800;letter-spacing:-.02em;line-height:1.1;margin-top:14px}
+  #hint{color:var(--mute);min-height:1.5em}
+  #hold{height:8px;background:#e3ddd0;border-radius:4px;overflow:hidden;margin:10px 0 14px}
+  #hf{height:100%;width:0;background:var(--accent);transition:width .1s}
+  .row{display:grid;grid-template-columns:140px 1fr 42px;gap:10px;align-items:center;margin:6px 0;font-size:.88rem}
+  .row.top{font-weight:700}
+  .track{height:9px;background:#e3ddd0;border-radius:5px;overflow:hidden}
+  .fill{height:100%;width:0;background:#b9b1a0}.row.top .fill{background:var(--brand)}
+  .head{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px}
+  .total{font-size:2.4rem;font-weight:800;line-height:1}.total small{font-size:.9rem;font-weight:400;color:var(--mute)}
+  ul{list-style:none;margin:10px 0 0;padding:0}
+  li{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px dashed var(--line)}
+  li span{flex:1;font-weight:600}
+  li b{min-width:2.2em;text-align:center;font-size:1.15rem}
+  li button{padding:4px 12px;font-size:1.1rem;background:#e5dfd2;color:var(--ink)}
+  .empty{color:var(--mute);padding:18px 0}
+  #toast{color:var(--brand);font-weight:600;min-height:1.5em;margin-top:10px}
+  .btns{display:flex;gap:8px;flex-wrap:wrap}
+  @media(prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<header><div class="wrap">
+  <div><h1>Smart Desk Scanner</h1><p>Place an item in front of the camera and it is counted automatically.</p></div>
+  <span id="pill" class="pill">Idle</span>
+</div></header>
+
+<div class="wrap">
+  <section class="card">
+    <div class="field">
+      <input id="url" placeholder="Paste your Teachable Machine link here" aria-label="Model link" autocomplete="off">
+      <button id="btn">Start camera</button>
+    </div>
+    <div id="err"></div>
+    <div class="steps"><b>1.</b> Paste link &nbsp; <b>2.</b> Start and allow the camera &nbsp; <b>3.</b> Hold one item steady inside the frame. Show an empty desk before the next item.</div>
+  </section>
+
+  <main>
+    <div>
+      <div class="card"><h2>Scanner</h2>
+        <div class="cam" id="cam"><div>Camera is off.<br>Press “Start camera”.</div></div>
+        <div id="item">–</div><div id="hint">Waiting to start</div>
+        <div id="hold"><div id="hf"></div></div>
+        <div class="btns"><button class="ghost" onclick="addCurrent()">Add current item</button></div>
+      </div>
+      <div class="card" style="margin-top:16px"><h2>Model confidence</h2><div id="bars"><span class="hint" style="color:var(--mute)">Class bars appear once the model loads.</span></div></div>
+    </div>
+    <div class="card" style="align-self:start"><h2>Desk inventory</h2>
+      <div class="head">
+        <div class="total"><span id="total">0</span> <small>items</small></div>
+        <div class="btns"><button class="ghost" onclick="exportCSV()">Download CSV</button><button class="ghost" onclick="clearAll()">Clear</button></div>
+      </div>
+      <div id="toast"></div>
+      <ul id="inv"><li class="empty">Nothing scanned yet. Hold an item up to the camera.</li></ul>
+    </div>
+  </main>
+</div>
+
+<script>
+  // ================== STEP 1: PASTE YOUR MODEL LINK HERE ==================
+  const MODEL_URL = "PASTE_YOUR_MODEL_LINK_HERE";
+  // ========================================================================
+
+  const MIN_CONFIDENCE = 0.85;  // how sure the model must be
+  const HOLD_MS = 1500;         // an item must stay steady this long to be counted
+  const EMPTY = /empty|none|nothing|background/;   // classes that mean "no item"
+
+  const $ = id => document.getElementById(id);
+  let model, webcam, running = false, inv = {}, cur = "", since = 0, added = false;
+  const isItem = l => l && !EMPTY.test(l.toLowerCase());
+
+  $("url").value = "";
+  window.addEventListener("pageshow", () => { $("url").value = ""; });
+  $("btn").onclick = () => running ? stop() : start();
+  $("url").onkeydown = e => { if (e.key === "Enter" && !running) start(); };
+  const status = (t, c = "") => { $("pill").textContent = t; $("pill").className = "pill " + c; };
+  const cleanUrl = u => { u = u.trim().split(/[?#]/)[0].replace(/(model|metadata)\.json$/, ""); return u.endsWith("/") ? u : u + "/"; };
+  const esc = s => s.replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+  async function start() {
+    const url = cleanUrl($("url").value);
+    $("err").textContent = "";
+    if (!/teachablemachine\.withgoogle\.com\/models\//.test(url)) {
+      $("err").textContent = "That doesn't look like a Teachable Machine link. It should start with https://teachablemachine.withgoogle.com/models/"; return;
+    }
+    $("btn").disabled = true; status("Loading model…", "load");
+    try { model = await tmImage.load(url + "model.json", url + "metadata.json"); }
+    catch (e) { console.error(e); status("Error", "err"); $("btn").disabled = false;
+      $("err").textContent = "Could not load the model. Use Export Model, then Upload, and copy the shareable link."; return; }
+    try { webcam = new tmImage.Webcam(440, 330, true); await webcam.setup(); await webcam.play(); }
+    catch (e) { console.error(e); status("Error", "err"); $("btn").disabled = false;
+      $("err").textContent = "Camera blocked. Allow camera access in the browser address bar and try again."; return; }
+    $("cam").innerHTML = '<div class="frame" id="frame"><i></i><i></i><i></i><i></i></div>';
+    $("cam").prepend(webcam.canvas);
+    $("bars").innerHTML = model.getClassLabels().map((c, i) =>
+      `<div class="row" id="r${i}"><span>${esc(c)}</span><div class="track"><div class="fill" id="f${i}"></div></div><span id="p${i}">0%</span></div>`).join("");
+    running = true; $("btn").textContent = "Stop"; $("btn").className = "stop"; $("btn").disabled = false;
+    status("Live", "live"); requestAnimationFrame(loop);
+  }
+
+  function stop() {
+    running = false; if (webcam) webcam.stop();
+    $("cam").innerHTML = "<div>Camera is off.<br>Press “Start camera”.</div>";
+    $("btn").textContent = "Start camera"; $("btn").className = ""; status("Idle");
+  }
+
+  async function loop() {
+    if (!running) return;
+    webcam.update();
+    const preds = await model.predict(webcam.canvas);
+    const top = preds.reduce((a, b) => a.probability > b.probability ? a : b);
+    preds.forEach((p, i) => { $("f" + i).style.width = p.probability * 100 + "%";
+      $("p" + i).textContent = Math.round(p.probability * 100) + "%"; $("r" + i).classList.toggle("top", p === top); });
+    track(top.probability >= MIN_CONFIDENCE ? top.className : "");
+    requestAnimationFrame(loop);
+  }
+
+  // Auto-count an item once it has been steady for HOLD_MS.
+  function track(label) {
+    const now = performance.now();
+    if (label !== cur) { cur = label; since = now; added = false; }
+    $("item").textContent = label || "–";
+    $("frame") && $("frame").classList.toggle("ok", isItem(label));
+    if (!isItem(label)) {
+      $("hint").textContent = label ? "Desk is empty. Ready for the next item." : "Not sure yet. Hold the item steady and well lit.";
+      $("hf").style.width = "0"; return;
+    }
+    if (added) { $("hint").textContent = "Counted. Remove it to scan another."; $("hf").style.width = "100%"; return; }
+    const pct = Math.min(1, (now - since) / HOLD_MS);
+    $("hf").style.width = pct * 100 + "%"; $("hint").textContent = "Hold steady…";
+    if (pct >= 1) { add(label, 1); added = true; }
+  }
+
+  function addCurrent() { if (isItem(cur)) { add(cur, 1); added = true; } else $("toast").textContent = "Show an item to the camera first."; }
+  function add(name, n) {
+    inv[name] = Math.max(0, (inv[name] || 0) + n); if (!inv[name]) delete inv[name];
+    if (n > 0) $("toast").textContent = "Added: " + name;
+    draw();
+  }
+  function clearAll() { inv = {}; $("toast").textContent = ""; draw(); }
+
+  function draw() {
+    const rows = Object.entries(inv);
+    $("total").textContent = rows.reduce((s, r) => s + r[1], 0);
+    $("inv").innerHTML = rows.length ? rows.map(([n, c]) =>
+      `<li><span>${esc(n)}</span><button data-n="${esc(n)}" data-d="-1" aria-label="Remove one">−</button><b>${c}</b><button data-n="${esc(n)}" data-d="1" aria-label="Add one">+</button></li>`).join("")
+      : '<li class="empty">Nothing scanned yet. Hold an item up to the camera.</li>';
+  }
+  $("inv").onclick = e => { const b = e.target.closest("button"); if (b) add(b.dataset.n, +b.dataset.d); };
+
+  function exportCSV() {
+    const csv = "item,count\n" + Object.entries(inv).map(([n, c]) => `"${n.replace(/"/g, '""')}",${c}`).join("\n");
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
+    a.download = "desk_inventory.csv"; a.click();
+  }
+</script>
+</body>
+</html>
